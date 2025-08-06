@@ -4,6 +4,8 @@ import { MarkdownPreview } from '../MarkdownPreview';
 import { User, Bot, ChevronDown, ChevronRight, Eye, EyeOff, Settings2, Wrench, CheckCircle, XCircle, Clock, ArrowDown } from 'lucide-react';
 import { parseTimestamp, formatDistanceToNow } from '../../utils/timestampUtils';
 import { ThinkingPlaceholder, InlineWorkingIndicator } from './ThinkingPlaceholder';
+import { SearchOverlay } from '../SearchOverlay';
+import { useRichOutputSearch } from '../../hooks/useRichOutputSearch';
 
 // Agent-agnostic message types for flexibility
 interface RawMessage {
@@ -37,7 +39,7 @@ interface ConversationMessage {
 }
 
 // Different types of content within a message
-type MessageSegment = 
+type MessageSegment =
   | { type: 'text'; content: string }
   | { type: 'tool_call'; tool: ToolCall }
   | { type: 'system_info'; info: any }
@@ -89,19 +91,22 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showScrollButton, setShowScrollButton] = useState(false);
-  
+
   // Use parent-controlled settings if provided, otherwise use default
   const localSettings = useMemo<RichOutputSettings>(() => {
     const saved = localStorage.getItem('richOutputSettings');
     return saved ? JSON.parse(saved) : defaultSettings;
   }, []);
-  
+
   const settings = propsSettings || localSettings;
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isLoadingRef = useRef(false);
   const userMessageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Search functionality
+  const search = useRichOutputSearch(scrollContainerRef);
 
   // Save local settings to localStorage when they change
   useEffect(() => {
@@ -109,7 +114,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
       localStorage.setItem('richOutputSettings', JSON.stringify(localSettings));
     }
   }, [localSettings, propsSettings]);
-  
+
   // Expose scroll method via ref
   React.useImperativeHandle(ref, () => ({
     scrollToPrompt: (promptIndex: number) => {
@@ -117,7 +122,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
       if (messageDiv && scrollContainerRef.current) {
         // Scroll to the message with some offset from top
         messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
+
         // Add a highlight effect
         messageDiv.classList.add('highlight-prompt');
         setTimeout(() => {
@@ -137,17 +142,17 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
         .join('\n')
         .trim();
     }
-    
+
     // Handle direct string content
     if (typeof msg.message?.content === 'string') {
       return msg.message.content.trim();
     }
-    
-    // Handle direct content field  
+
+    // Handle direct content field
     if (typeof msg.content === 'string') {
       return msg.content.trim();
     }
-    
+
     // Handle Gemini/other formats (future-proofing)
     if (msg.message?.parts && Array.isArray(msg.message.parts)) {
       return msg.message.parts
@@ -156,7 +161,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
         .join('\n')
         .trim();
     }
-    
+
     return '';
   };
 
@@ -165,18 +170,18 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
     if (msg.message?.model?.includes('claude')) return 'claude';
     if (msg.message?.model?.includes('gemini')) return 'gemini';
     if (msg.message?.model?.includes('gpt')) return 'gpt-4';
-    
+
     // Fallback based on message structure
     if (msg.message?.content && Array.isArray(msg.message.content)) return 'claude';
     if (msg.message?.parts) return 'gemini';
-    
+
     return 'unknown';
   };
 
   // Transform raw messages into structured conversation messages
   const transformMessages = (rawMessages: RawMessage[]): ConversationMessage[] => {
     const transformed: ConversationMessage[] = [];
-    
+
     // First pass: Build tool result map
     const toolResults = new Map<string, ToolResult>();
     rawMessages.forEach(msg => {
@@ -191,25 +196,25 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
         });
       }
     });
-    
+
     // Second pass: Build conversation messages
     for (let i = 0; i < rawMessages.length; i++) {
       const msg = rawMessages[i];
-      
+
       if (msg.type === 'user') {
         // Check if this is a tool result message
         let hasToolResult = false;
         let hasOnlyText = true;
-        
+
         if (msg.message?.content && Array.isArray(msg.message.content)) {
           hasToolResult = msg.message.content.some((block: any) => block.type === 'tool_result');
           hasOnlyText = msg.message.content.every((block: any) => block.type === 'text');
         }
-        
+
         // Only show real user prompts (text-only messages without tool results)
         if (!hasToolResult && hasOnlyText) {
           const textContent = extractTextContent(msg);
-          
+
           if (textContent) {
             transformed.push({
               id: msg.id || `user-${i}-${msg.timestamp}`,
@@ -221,11 +226,11 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
           }
         }
         // Skip tool result messages - they're attached to assistant messages
-        
+
       } else if (msg.type === 'assistant') {
         const segments: MessageSegment[] = [];
-        
-        
+
+
         // Check for direct text field first (some messages come this way)
         if (msg.text && typeof msg.text === 'string') {
           segments.push({ type: 'text', content: msg.text.trim() });
@@ -257,16 +262,16 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             segments.push({ type: 'text', content: textContent });
           }
         }
-        
+
         // Only add message if it has content
         if (segments.length > 0) {
           // Check if this is a synthetic error message
-          const isSyntheticError = msg.message?.model === '<synthetic>' && 
-            segments.some(seg => seg.type === 'text' && 
-              (seg.content.includes('Prompt is too long') || 
+          const isSyntheticError = msg.message?.model === '<synthetic>' &&
+            segments.some(seg => seg.type === 'text' &&
+              (seg.content.includes('Prompt is too long') ||
                seg.content.includes('API Error') ||
                seg.content.includes('error')));
-          
+
           transformed.push({
             id: msg.id || `assistant-${i}-${msg.timestamp}`,
             role: isSyntheticError ? 'system' : 'assistant',
@@ -276,23 +281,23 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
               agent: detectAgent(msg),
               model: msg.message?.model,
               duration: msg.message?.duration,
-              tokens: msg.message?.usage ? 
-                (msg.message.usage.input_tokens || 0) + (msg.message.usage.output_tokens || 0) : 
+              tokens: msg.message?.usage ?
+                (msg.message.usage.input_tokens || 0) + (msg.message.usage.output_tokens || 0) :
                 undefined,
               cost: msg.message?.usage?.cost,
               systemSubtype: isSyntheticError ? 'error' : undefined
             }
           });
         }
-        
+
       } else if (msg.type === 'system' && msg.subtype === 'init') {
         // Include system init messages
         transformed.push({
           id: msg.id || `system-init-${i}-${msg.timestamp}`,
           role: 'system',
           timestamp: msg.timestamp,
-          segments: [{ 
-            type: 'system_info', 
+          segments: [{
+            type: 'system_info',
             info: {
               cwd: msg.cwd,
               model: msg.model,
@@ -307,15 +312,15 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             sessionInfo: msg
           }
         });
-        
+
       } else if (msg.type === 'system' && msg.subtype === 'context_compacted') {
         // Handle context compaction messages
         transformed.push({
           id: msg.id || `context-compacted-${i}-${msg.timestamp}`,
           role: 'system',
           timestamp: msg.timestamp,
-          segments: [{ 
-            type: 'text', 
+          segments: [{
+            type: 'text',
             content: msg.summary || ''
           }, {
             type: 'system_info',
@@ -327,7 +332,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             systemSubtype: 'context_compacted'
           }
         });
-        
+
       } else if (msg.type === 'result') {
         // Handle execution result messages - especially errors
         if (msg.is_error && msg.result) {
@@ -335,8 +340,8 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             id: msg.id || `error-${i}-${msg.timestamp}`,
             role: 'system',
             timestamp: msg.timestamp,
-            segments: [{ 
-              type: 'text', 
+            segments: [{
+              type: 'text',
               content: `Error: ${msg.result}`
             }],
             metadata: {
@@ -350,7 +355,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
         continue;
       }
     }
-    
+
     return transformed;
   };
 
@@ -359,16 +364,16 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
     // Prevent concurrent loads using ref
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
-    
+
     try {
       setError(null);
-      
+
       // Load both conversation messages (for user prompts) and JSON messages (for detailed responses)
       const [conversationResponse, outputResponse] = await Promise.all([
         API.sessions.getConversation(sessionId),
         API.sessions.getJsonMessages(sessionId)
       ]);
-      
+
       // Combine both sources - conversation messages have the actual user prompts
       const userPrompts: RawMessage[] = [];
       if (conversationResponse.success && Array.isArray(conversationResponse.data)) {
@@ -385,22 +390,22 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
           }
         });
       }
-      
+
       // Combine user prompts with output messages (filter for JSON messages)
       const allMessages = [...userPrompts];
       if (outputResponse.success && outputResponse.data && Array.isArray(outputResponse.data)) {
         // JSON messages are already in the correct format from getJsonMessages
         allMessages.push(...outputResponse.data);
       }
-      
+
       // Sort by timestamp to get correct order
       allMessages.sort((a, b) => {
         const timeA = new Date(a.timestamp).getTime();
         const timeB = new Date(b.timestamp).getTime();
         return timeA - timeB;
       });
-      
-      
+
+
       const conversationMessages = transformMessages(allMessages);
       setMessages(conversationMessages);
     } catch (err) {
@@ -415,7 +420,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
   // Listen for real-time output updates - debounced to prevent performance issues
   useEffect(() => {
     let debounceTimer: NodeJS.Timeout;
-    
+
     const handleOutputAvailable = (event: CustomEvent<{ sessionId: string }>) => {
       if (event.detail.sessionId === sessionId) {
         // Debounce message reloading to prevent excessive re-renders
@@ -427,7 +432,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
     };
 
     window.addEventListener('session-output-available', handleOutputAvailable as any);
-    
+
     return () => {
       clearTimeout(debounceTimer);
       window.removeEventListener('session-output-available', handleOutputAvailable as any);
@@ -500,7 +505,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
   // Render a tool call segment
   const renderToolCall = (tool: ToolCall) => {
     const isExpanded = !settings.collapseTools || expandedTools.has(tool.id);
-    
+
     return (
       <div className="rounded-md bg-surface-tertiary/50 overflow-hidden border border-border-primary/50">
         <button
@@ -516,9 +521,9 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             isExpanded ? <ChevronDown className="w-3 h-3 text-text-tertiary" /> : <ChevronRight className="w-3 h-3 text-text-tertiary" />
           )}
         </button>
-        
+
         {isExpanded && (
-          <div className="px-3 py-2 text-xs">
+          <div className="px-3 py-2 text-xs" data-tool-content>
             {/* Tool Parameters */}
             {tool.input && Object.keys(tool.input).length > 0 && (
               <div className="mb-2">
@@ -526,7 +531,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
                 {formatToolInput(tool.name, tool.input)}
               </div>
             )}
-            
+
             {/* Tool Result */}
             {tool.result && (
               <div>
@@ -538,7 +543,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
                 </div>
               </div>
             )}
-            
+
             {/* Pending state */}
             {tool.status === 'pending' && (
               <div className="text-text-tertiary italic">Waiting for result...</div>
@@ -564,7 +569,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             {input.offset && <div className="text-text-tertiary">Lines: {input.offset}-{input.offset + (input.limit || 2000)}</div>}
           </div>
         );
-      
+
       case 'Edit':
       case 'MultiEdit':
         return (
@@ -575,7 +580,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             )}
           </div>
         );
-      
+
       case 'Write':
         return (
           <div className="font-mono text-sm space-y-1">
@@ -585,14 +590,14 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             )}
           </div>
         );
-      
+
       case 'Bash':
         return (
           <div className="font-mono text-sm bg-bg-tertiary px-2 py-1 rounded">
             <span className="text-status-success">$</span> {input.command}
           </div>
         );
-      
+
       case 'Grep':
         return (
           <div className="font-mono text-sm space-y-1">
@@ -601,14 +606,14 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             {input.glob && <div>Files: {input.glob}</div>}
           </div>
         );
-      
+
       case 'TodoWrite':
         return (
           <div className="text-sm space-y-1">
             {input.todos && input.todos.map((todo: any, idx: number) => {
-              const icon = todo.status === 'completed' ? '✓' : 
+              const icon = todo.status === 'completed' ? '✓' :
                           todo.status === 'in_progress' ? '→' : '○';
-              const color = todo.status === 'completed' ? 'text-status-success' : 
+              const color = todo.status === 'completed' ? 'text-status-success' :
                            todo.status === 'in_progress' ? 'text-status-warning' : 'text-text-tertiary';
               return (
                 <div key={idx} className={`${color} truncate`}>
@@ -618,7 +623,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             })}
           </div>
         );
-      
+
       default:
         // Compact display for unknown tools
         return (
@@ -634,11 +639,11 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
     if (!result) {
       return <div className="text-sm text-text-tertiary italic">No result</div>;
     }
-    
+
     try {
       // Check if result is JSON
       const parsed = JSON.parse(result);
-      
+
       // Handle image reads
       if (Array.isArray(parsed) && parsed[0]?.type === 'image') {
         return (
@@ -647,7 +652,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
           </div>
         );
       }
-      
+
       // For other JSON results, pretty print compactly
       return (
         <pre className="text-xs overflow-x-auto max-h-32">
@@ -666,7 +671,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
           </details>
         );
       }
-      
+
       return <pre className="text-sm whitespace-pre-wrap">{result}</pre>;
     }
   };
@@ -681,18 +686,18 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
       .filter(seg => seg.type === 'text')
       .map(seg => seg.type === 'text' ? seg.content : '')
       .join('\n\n');
-    
+
     // Check if message has tool calls or thinking
     const hasToolCalls = message.segments.some(seg => seg.type === 'tool_call');
     const hasThinking = message.segments.some(seg => seg.type === 'thinking');
-    
+
     // Determine if we need extra spacing before this message
     const prevMessage = index > 0 ? filteredMessages[index - 1] : null;
     const needsExtraSpacing = prevMessage && (
-      (prevMessage.role !== message.role) || 
+      (prevMessage.role !== message.role) ||
       (hasThinking && !prevMessage.segments.some(seg => seg.type === 'thinking'))
     );
-    
+
     // Special rendering for system messages
     if (isSystem) {
       if (message.metadata?.systemSubtype === 'init') {
@@ -766,9 +771,9 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
         // Render context compaction messages
         // Get the message info from the system_info segment
         const infoSegment = message.segments.find(seg => seg.type === 'system_info');
-        const helpMessage = infoSegment?.type === 'system_info' ? infoSegment.info.message : 
+        const helpMessage = infoSegment?.type === 'system_info' ? infoSegment.info.message :
           'Context has been compacted. You can continue chatting - your next message will automatically include the context summary above.';
-        
+
         return (
           <div
             key={message.id}
@@ -791,14 +796,14 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
                     {formatDistanceToNow(parseTimestamp(message.timestamp))}
                   </span>
                 </div>
-                
+
                 {/* Summary content */}
                 <div className="bg-surface-secondary rounded-lg p-3 mb-3 border border-border-primary">
                   <div className="text-sm text-text-secondary font-mono whitespace-pre-wrap">
                     {textContent}
                   </div>
                 </div>
-                
+
                 {/* Clear instruction message */}
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-status-success mt-0.5 flex-shrink-0" />
@@ -812,7 +817,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
         );
       }
     }
-    
+
     return (
       <div
         key={message.id}
@@ -869,7 +874,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
                   <div key={`${message.id}-thinking-${idx}`} className="relative">
                     <div className="absolute -left-7 top-0 w-1 h-full bg-interactive/20 rounded-full" />
                     <div className="pl-4 pr-2 py-2">
-                      <div className="text-sm thinking-content italic text-text-secondary">
+                      <div className="text-sm thinking-content italic text-text-secondary" data-thinking-content>
                         <MarkdownPreview content={seg.content} />
                       </div>
                     </div>
@@ -879,14 +884,16 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
               return null;
             })
           }
-          
+
           {/* Text segments */}
           {hasTextContent && (
             <div className={`${isCollapsed ? 'max-h-20 overflow-hidden relative' : ''}`}>
               {isUser ? (
-                <div className="text-text-primary whitespace-pre-wrap font-medium">{textContent}</div>
+                <div className="text-text-primary whitespace-pre-wrap font-medium" data-message-content>
+                  {textContent}
+                </div>
               ) : (
-                <div className="rich-output-markdown">
+                <div className="rich-output-markdown" data-message-content>
                   <MarkdownPreview content={textContent} />
                 </div>
               )}
@@ -895,7 +902,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
               )}
             </div>
           )}
-          
+
           {/* Tool calls */}
           {settings.showToolCalls && message.segments
             .filter(seg => seg.type === 'tool_call')
@@ -932,13 +939,13 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
     if (sessionStatus === 'running') {
       return true;
     }
-    
+
     // Also show if waiting and last message is from user
     if (sessionStatus === 'waiting' && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       return lastMessage.role === 'user';
     }
-    
+
     return false;
   }, [messages, sessionStatus]);
 
@@ -980,11 +987,28 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
 
   return (
     <div className="h-full flex flex-col bg-bg-primary relative">
+      {/* Search Overlay */}
+      <SearchOverlay
+        isOpen={search.searchState.isOpen}
+        query={search.searchState.query}
+        currentMatch={search.searchState.currentMatch}
+        totalMatches={search.searchState.totalMatches}
+        caseSensitive={search.searchState.caseSensitive}
+        wholeWord={search.searchState.wholeWord}
+        searchInputRef={search.searchInputRef}
+        onQueryChange={search.setQuery}
+        onClose={search.closeSearch}
+        onNavigateNext={() => search.navigateToMatch('next')}
+        onNavigatePrev={() => search.navigateToMatch('prev')}
+        onToggleCaseSensitive={search.toggleCaseSensitive}
+        onToggleWholeWord={search.toggleWholeWord}
+      />
+
       {/* Settings panel is now rendered in SessionView to avoid duplication */}
 
       {/* Messages */}
-      <div 
-        className="flex-1 overflow-y-auto relative scrollbar-thin scrollbar-thumb-border-secondary scrollbar-track-transparent hover:scrollbar-thumb-border-primary" 
+      <div
+        className="flex-1 overflow-y-auto relative scrollbar-thin scrollbar-thumb-border-secondary scrollbar-track-transparent hover:scrollbar-thumb-border-primary"
         ref={scrollContainerRef}
         style={{
           scrollbarWidth: 'thin',
@@ -1000,7 +1024,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             <div className="space-y-4 px-4">
               {renderedMessages}
               {isWaitingForResponse && (
-                filteredMessages.length === 0 || 
+                filteredMessages.length === 0 ||
                 (filteredMessages.length > 0 && filteredMessages[filteredMessages.length - 1].role === 'user') ? (
                   <ThinkingPlaceholder />
                 ) : (
@@ -1011,7 +1035,7 @@ export const RichOutputView = React.forwardRef<{ scrollToPrompt: (promptIndex: n
             </div>
           )}
         </div>
-        
+
         {/* Scroll to bottom button - centered above input */}
         {showScrollButton && (
           <div className="sticky bottom-4 flex justify-center pointer-events-none">

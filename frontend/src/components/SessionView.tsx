@@ -17,6 +17,8 @@ import { API } from '../utils/api';
 import { RichOutputWithSidebar } from './session/RichOutputWithSidebar';
 import { RichOutputSettings } from './session/RichOutputView';
 import { RichOutputSettingsPanel } from './session/RichOutputSettingsPanel';
+import { SearchOverlay } from './SearchOverlay';
+import { useTerminalSearch } from '../hooks/useTerminalSearch';
 
 export const SessionView = memo(() => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -29,9 +31,9 @@ export const SessionView = memo(() => {
   const [sessionProject, setSessionProject] = useState<any>(null);
 
   // Define activeSession early so it can be used in effects
-  const activeSession = activeSessionId 
-    ? (activeMainRepoSession && activeMainRepoSession.id === activeSessionId 
-        ? activeMainRepoSession 
+  const activeSession = activeSessionId
+    ? (activeMainRepoSession && activeMainRepoSession.id === activeSessionId
+        ? activeMainRepoSession
         : sessions.find(s => s.id === activeSessionId))
     : undefined;
 
@@ -126,7 +128,10 @@ export const SessionView = memo(() => {
   const scriptTerminalRef = useRef<HTMLDivElement>(null);
 
   const hook = useSessionView(activeSession, terminalRef, scriptTerminalRef);
-  
+
+  // Terminal search functionality - use the exposed terminal instance from the hook
+  const terminalSearch = useTerminalSearch(hook.scriptTerminalInstance);
+
   // Settings state for Rich Output view
   const [showRichOutputSettings, setShowRichOutputSettings] = useState(false);
   const [richOutputSettings, setRichOutputSettings] = useState<RichOutputSettings>(() => {
@@ -140,12 +145,12 @@ export const SessionView = memo(() => {
       showSessionInit: false,
     };
   });
-  
+
   const handleRichOutputSettingsChange = (newSettings: RichOutputSettings) => {
     setRichOutputSettings(newSettings);
     localStorage.setItem('richOutputSettings', JSON.stringify(newSettings));
   };
-  
+
   // Memoize props to prevent unnecessary re-renders
   const emptySelectedExecutions = useMemo(() => [], []);
   const isMainRepo = useMemo(() => activeSession?.isMainRepo || false, [activeSession?.isMainRepo]);
@@ -188,7 +193,7 @@ export const SessionView = memo(() => {
       </div>
     );
   }
-  
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
       <SessionHeader
@@ -217,29 +222,48 @@ export const SessionView = memo(() => {
         onSettingsClick={() => setShowRichOutputSettings(!showRichOutputSettings)}
         showSettings={showRichOutputSettings}
       />
-      
+
       <div className="flex-1 flex relative min-h-0">
         <div className="flex-1 relative">
           {hook.isLoadingOutput && (
             <div className="absolute top-4 left-4 text-text-secondary z-10">Loading output...</div>
           )}
           <div className={`h-full ${hook.viewMode === 'richOutput' ? 'block' : 'hidden'}`}>
-            <RichOutputWithSidebar 
+            <RichOutputWithSidebar
               sessionId={activeSession.id}
               settings={richOutputSettings}
               onSettingsChange={handleRichOutputSettingsChange}
             />
           </div>
           <div className={`h-full ${hook.viewMode === 'changes' ? 'block' : 'hidden'} overflow-hidden`}>
-            <CombinedDiffView 
-              sessionId={activeSession.id} 
-              selectedExecutions={emptySelectedExecutions} 
+            <CombinedDiffView
+              sessionId={activeSession.id}
+              selectedExecutions={emptySelectedExecutions}
               isGitOperationRunning={hook.isMerging}
               isMainRepo={isMainRepo}
               isVisible={hook.viewMode === 'changes'}
             />
           </div>
-          <div className={`h-full ${hook.viewMode === 'terminal' ? 'flex flex-col' : 'hidden'} bg-bg-primary`}>
+          <div className={`h-full ${hook.viewMode === 'terminal' ? 'flex flex-col' : 'hidden'} bg-bg-primary relative`}>
+            {/* Search Overlay for Terminal */}
+            {hook.viewMode === 'terminal' && (
+              <SearchOverlay
+                isOpen={terminalSearch.searchState.isOpen}
+                query={terminalSearch.searchState.query}
+                currentMatch={terminalSearch.searchState.currentMatch}
+                totalMatches={terminalSearch.searchState.totalMatches}
+                caseSensitive={terminalSearch.searchState.caseSensitive}
+                wholeWord={terminalSearch.searchState.wholeWord}
+                searchInputRef={terminalSearch.searchInputRef}
+                onQueryChange={terminalSearch.setQuery}
+                onClose={terminalSearch.closeSearch}
+                onNavigateNext={() => terminalSearch.navigateToMatch('next')}
+                onNavigatePrev={() => terminalSearch.navigateToMatch('prev')}
+                onToggleCaseSensitive={terminalSearch.toggleCaseSensitive}
+                onToggleWholeWord={terminalSearch.toggleWholeWord}
+              />
+            )}
+
             <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border-primary">
               <div className="text-sm text-text-secondary">
                 Terminal
@@ -250,17 +274,17 @@ export const SessionView = memo(() => {
                   className="p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-hover rounded transition-colors"
                   title="Clear terminal"
                 >
-                  <svg 
-                    className="w-4 h-4" 
-                    fill="none" 
-                    stroke="currentColor" 
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                     />
                   </svg>
                 </button>
@@ -297,7 +321,7 @@ export const SessionView = memo(() => {
           </div>
         </div>
       </div>
-      
+
       {hook.viewMode !== 'terminal' && (
         <SessionInputWithImages
           activeSession={activeSession}
@@ -346,7 +370,7 @@ export const SessionView = memo(() => {
         onClose={() => hook.setShowStravuSearch(false)}
         onFileSelect={hook.handleStravuFileSelect}
       />
-      
+
       {/* Rich Output Settings Panel */}
       {hook.viewMode === 'richOutput' && showRichOutputSettings && (
         <RichOutputSettingsPanel

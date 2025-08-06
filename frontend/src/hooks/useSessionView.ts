@@ -62,7 +62,7 @@ export const useSessionView = (
   const [contextCompacted, setContextCompacted] = useState(false);
   const [compactedContext, setCompactedContext] = useState<string | null>(null);
   const [hasConversationHistory, setHasConversationHistory] = useState(false);
-  
+
   const [, forceUpdate] = useState({});
   const [shouldReloadOutput, setShouldReloadOutput] = useState(false);
 
@@ -79,7 +79,7 @@ export const useSessionView = (
   const isContinuingConversationRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const outputLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Debug function to check state health
   const debugState = useCallback(() => {
     console.log('[DEBUG STATE]', {
@@ -95,7 +95,7 @@ export const useSessionView = (
       pendingTimeout: !!outputLoadTimeoutRef.current
     });
   }, [outputLoadState, activeSessionId, currentSessionIdForOutput, formattedOutput.length, viewMode]);
-  
+
   // Force reset stuck state
   const forceResetLoadingState = useCallback(() => {
     console.log('[forceResetLoadingState] Forcing reset of all loading states');
@@ -116,32 +116,32 @@ export const useSessionView = (
 
   const loadOutputContent = useCallback(async (sessionId: string, retryCount = 0) => {
     console.log(`[loadOutputContent] Called for session ${sessionId}, retry: ${retryCount}, loadingRef: ${loadingRef.current}`);
-    
+
     // Cancel any existing load request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    
+
     // Clear any pending timeout
     if (outputLoadTimeoutRef.current) {
       clearTimeout(outputLoadTimeoutRef.current);
       outputLoadTimeoutRef.current = null;
     }
-    
+
     // Check if already loading this session
     if (loadingRef.current && loadingSessionIdRef.current === sessionId) {
       console.log(`[loadOutputContent] Already loading session ${sessionId}, skipping`);
       return;
     }
-    
+
     // If loading a different session, abort the old one
     if (loadingRef.current && loadingSessionIdRef.current !== sessionId) {
       console.log(`[loadOutputContent] Currently loading session ${loadingSessionIdRef.current}, will switch to ${sessionId}`);
       loadingRef.current = false;
       loadingSessionIdRef.current = null;
     }
-    
+
     // Check if session is still active
     const currentActiveSession = useSessionStore.getState().getActiveSession();
     if (!currentActiveSession || currentActiveSession.id !== sessionId) {
@@ -155,12 +155,12 @@ export const useSessionView = (
     setIsLoadingOutput(true);
     setOutputLoadState('loading');
     setLoadError(null);
-    
+
     // Show loading message in terminal if this is the first load
     if (terminalInstance.current && retryCount === 0 && lastProcessedOutputLength.current === 0) {
       terminalInstance.current.writeln('\r\n⏳ Loading session output...\r\n');
     }
-    
+
     // Create new AbortController for this request
     abortControllerRef.current = new AbortController();
 
@@ -184,10 +184,10 @@ export const useSessionView = (
         }
         throw new Error(response.error || 'Failed to load output');
       }
-      
+
       const outputs = response.data || [];
       console.log(`[loadOutputContent] Received ${outputs.length} outputs for session ${sessionId}`);
-      
+
       // Check if still the active session after async operation
       const stillActiveSession = useSessionStore.getState().getActiveSession();
       if (!stillActiveSession || stillActiveSession.id !== sessionId) {
@@ -199,30 +199,30 @@ export const useSessionView = (
         setOutputLoadState('idle');
         return;
       }
-      
+
       // Clear loading message if we showed one
       if (terminalInstance.current && retryCount === 0 && lastProcessedOutputLength.current === 0) {
         terminalInstance.current.clear();
       }
-      
+
       // Set outputs
       console.log(`[loadOutputContent] Setting outputs in store for session ${sessionId}, count: ${outputs.length}`);
       useSessionStore.getState().setSessionOutputs(sessionId, outputs);
-      
+
       // Outputs have been set
-      
+
       setOutputLoadState('loaded');
-      
+
       if (isWaitingForFirstOutput && outputs.length > 0) {
         setIsWaitingForFirstOutput(false);
       }
-      
+
       // Reset continuing conversation flag after successfully loading output
       if (isContinuingConversationRef.current) {
         console.log(`[loadOutputContent] Resetting continuing conversation flag after output load`);
         isContinuingConversationRef.current = false;
       }
-      
+
       setLoadError(null);
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -234,14 +234,14 @@ export const useSessionView = (
         setOutputLoadState('idle');
         return;
       }
-      
+
       console.error(`[loadOutputContent] Error loading output for session ${sessionId}:`, error);
       setOutputLoadState('error');
-      
+
       // Retry logic for new sessions only
       const isNewSession = activeSession?.status === 'initializing';
       const maxRetries = isNewSession ? 3 : 0;
-      
+
       if (retryCount < maxRetries) {
         const delay = 1000 * (retryCount + 1);
         console.log(`[loadOutputContent] Retrying in ${delay}ms for session ${sessionId}`);
@@ -275,7 +275,7 @@ export const useSessionView = (
       const updatedSession = state.activeMainRepoSession?.id === activeSessionId
         ? state.activeMainRepoSession
         : state.sessions.find(s => s.id === activeSessionId);
-      
+
       if (updatedSession && updatedSession.status !== activeSession?.status) {
         if (activeSession?.status === 'initializing' && updatedSession.status === 'running') {
           // Only clear terminal and reload for new sessions, not when continuing conversations
@@ -320,13 +320,13 @@ export const useSessionView = (
 
     console.log(`[useSessionView] Session changed from ${previousSessionIdRef.current} to ${currentSessionId}`);
     previousSessionIdRef.current = currentSessionId;
-    
+
     // Force reset any stuck loading state when switching sessions
     forceResetLoadingState();
-    
+
     // Reset view mode to output when switching sessions
     setViewMode('richOutput');
-    
+
     // Reset unread activity indicators
     setUnreadActivity({
       changes: false,
@@ -334,11 +334,11 @@ export const useSessionView = (
       editor: false,
       richOutput: false,
     });
-    
+
     // Reset context compaction state when switching sessions
     setContextCompacted(false);
     setCompactedContext(null);
-    
+
     // Clear terminal immediately when session changes
     if (terminalInstance.current) {
       console.log(`[useSessionView] Clearing terminal for session switch`);
@@ -358,7 +358,7 @@ export const useSessionView = (
 
     console.log(`[useSessionView] Setting up for session ${activeSession.id}, status: ${activeSession.status}`);
     setCurrentSessionIdForOutput(activeSession.id);
-    
+
     // Check if session has conversation history
     const checkConversationHistory = async () => {
       try {
@@ -372,12 +372,12 @@ export const useSessionView = (
       }
     };
     checkConversationHistory();
-    
+
     // Don't reset the terminal when switching sessions - preserve the state
     // if (scriptTerminalInstance.current) {
     //   scriptTerminalInstance.current.reset();
     // }
-    
+
     // Reset output tracking
     lastProcessedOutputLength.current = 0;
     lastProcessedScriptOutputLength.current = 0;
@@ -385,8 +385,8 @@ export const useSessionView = (
     const hasOutput = activeSession.output && activeSession.output.length > 0;
     const hasMessages = activeSession.jsonMessages && activeSession.jsonMessages.length > 0;
     const isNewSession = activeSession.status === 'initializing' || (activeSession.status === 'running' && !hasOutput && !hasMessages);
-    
-    
+
+
     if (isNewSession) {
       setIsWaitingForFirstOutput(true);
       setStartTime(Date.now());
@@ -400,7 +400,7 @@ export const useSessionView = (
 
   useEffect(() => {
     if (!activeSession) return;
-    
+
     // Make sure we're tracking the right session for output
     if (currentSessionIdForOutput !== activeSession.id) {
       console.log(`[useSessionView] Session ID mismatch in format effect - current: ${currentSessionIdForOutput}, active: ${activeSession.id}`);
@@ -410,7 +410,7 @@ export const useSessionView = (
       }
       return;
     }
-    
+
     if (messageCount === 0 && outputCount === 0) {
       return;
     }
@@ -425,17 +425,17 @@ export const useSessionView = (
         console.log(`[formatOutput] Session changed during formatting, aborting`);
         return;
       }
-      
+
       // The output array should already contain formatted strings from the IPC handler
       const outputArray = currentActiveSession.output || [];
       console.log(`[formatOutput] Session ${activeSession.id} has ${outputArray.length} output items`);
-      
+
       if (outputArray.length > 0) {
         console.log(`[formatOutput] First output item preview: ${outputArray[0].substring(0, 200)}`);
       }
-      
+
       const formatted = outputArray.join('');
-      
+
       // Double-check we're still on the same session before updating
       const finalActiveSession = useSessionStore.getState().getActiveSession();
       if (finalActiveSession && finalActiveSession.id === activeSession.id && currentSessionIdForOutput === activeSession.id) {
@@ -445,40 +445,40 @@ export const useSessionView = (
         console.log(`[formatOutput] Session mismatch during final check - finalActiveSession.id: ${finalActiveSession?.id}, activeSession.id: ${activeSession.id}, currentSessionIdForOutput: ${currentSessionIdForOutput}`);
       }
     };
-    
+
     // Use requestAnimationFrame to ensure state is settled
     requestAnimationFrame(() => {
       formatOutput();
     });
   }, [activeSession?.id, messageCount, outputCount, currentSessionIdForOutput, isWaitingForFirstOutput]);
-  
+
   // Consolidated effect for loading output
   useEffect(() => {
     console.log(`[Output Load Effect] Checking - activeSession: ${activeSession?.id}, currentSessionIdForOutput: ${currentSessionIdForOutput}, outputLoadState: ${outputLoadState}, loadingRef: ${loadingRef.current}, loadingSessionId: ${loadingSessionIdRef.current}`);
-    
+
     if (!activeSession || !currentSessionIdForOutput || currentSessionIdForOutput !== activeSession.id) {
       return;
     }
-    
+
     // Skip initial load if continuing conversation, but allow explicit reloads
     if (isContinuingConversationRef.current && outputLoadState === 'idle' && !shouldReloadOutput) {
       console.log(`[Output Load Effect] Skipping initial load - continuing conversation`);
       return;
     }
-    
+
     // Check if session has output data
-    
-    
+
+
     // Check for stuck loading state and force reset if needed
     if (loadingRef.current && outputLoadState === 'idle') {
       console.warn(`[Output Load Effect] Detected stuck loading state, forcing reset`);
       forceResetLoadingState();
     }
-    
+
     // Determine if we need to load output
     let shouldLoad = false;
     let loadDelay = 0;
-    
+
     if (outputLoadState === 'idle') {
       // Always load when idle - let the backend be the source of truth
       shouldLoad = true;
@@ -494,7 +494,7 @@ export const useSessionView = (
       shouldLoad = true;
       loadDelay = 1000;
     }
-    
+
     if (shouldLoad && !loadingRef.current) {
       console.log(`[Output Load Effect] Scheduling load for session ${activeSession.id} in ${loadDelay}ms`);
       if (loadDelay > 0) {
@@ -520,12 +520,12 @@ export const useSessionView = (
     loadOutputContent,
     forceResetLoadingState
   ]);
-  
+
   // Listen for output available events
   useEffect(() => {
     const handleOutputAvailable = (event: CustomEvent) => {
       const { sessionId } = event.detail;
-      
+
       // Check if this is for the active session
       if (activeSession?.id === sessionId) {
         // Trigger reload if we're loaded or if we're continuing a conversation
@@ -535,19 +535,19 @@ export const useSessionView = (
         }
       }
     };
-    
+
     window.addEventListener('session-output-available', handleOutputAvailable as EventListener);
     return () => window.removeEventListener('session-output-available', handleOutputAvailable as EventListener);
   }, [activeSession?.id, outputLoadState]);
 
   const initTerminal = useCallback((termRef: React.RefObject<HTMLDivElement | null>, instanceRef: React.MutableRefObject<Terminal | null>, fitAddonRef: React.MutableRefObject<FitAddon | null>, isScript: boolean) => {
     console.log(`[initTerminal] Called - termRef.current: ${!!termRef.current}, instanceRef.current: ${!!instanceRef.current}, isScript: ${isScript}`);
-    
+
     if (!termRef.current) {
       console.log(`[initTerminal] No terminal ref element, cannot initialize`);
       return;
     }
-    
+
     if (instanceRef.current) {
       console.log(`[initTerminal] Terminal instance already exists, skipping`);
       return;
@@ -576,13 +576,13 @@ export const useSessionView = (
 
     instanceRef.current = term;
     fitAddonRef.current = addon;
-    
+
     console.log(`[initTerminal] Terminal initialized successfully`);
 
     if (isScript) {
         // Clear any existing content
         term.clear();
-        
+
         // Add keyboard handling for direct terminal input - pass everything through
         term.onData((data) => {
           // Pass all input directly to the PTY without buffering
@@ -592,7 +592,7 @@ export const useSessionView = (
             });
           }
         });
-        
+
         // Send an initial empty input to ensure the PTY connection is established
         // and any buffered output is sent to the terminal
         if (activeSession && !activeSession.archived) {
@@ -605,13 +605,13 @@ export const useSessionView = (
     }
   }, [theme, activeSession]);
 
-  // Terminal output view has been removed - no terminal initialization needed  
+  // Terminal output view has been removed - no terminal initialization needed
   // Pre-initialize script terminal when session becomes active
   useEffect(() => {
     if (activeSession && scriptTerminalRef.current && !scriptTerminalInstance.current) {
       console.log('[Terminal] Pre-initializing script terminal for session', activeSession.id);
       initTerminal(scriptTerminalRef, scriptTerminalInstance, scriptFitAddon, true);
-      
+
       // Also pre-create the backend PTY session
       API.sessions.preCreateTerminal(activeSession.id).then(response => {
         if (response.success) {
@@ -627,9 +627,9 @@ export const useSessionView = (
     if (viewMode === 'terminal') {
       // Check if terminal is already initialized
       const wasAlreadyInitialized = scriptTerminalInstance.current !== null;
-      
+
       initTerminal(scriptTerminalRef, scriptTerminalInstance, scriptFitAddon, true);
-      
+
       // After initializing the terminal, immediately write any existing output
       if (activeSession) {
         // Use setTimeout to ensure terminal is fully initialized
@@ -641,7 +641,7 @@ export const useSessionView = (
             scriptTerminalInstance.current.write(existingOutput);
             lastProcessedScriptOutputLength.current = existingOutput.length;
           }
-          
+
           // Only send empty input if this is a fresh terminal initialization
           // Don't send it when just switching back to terminal view
           if (!wasAlreadyInitialized && !activeSession.archived) {
@@ -652,7 +652,7 @@ export const useSessionView = (
           } else {
             console.log('[Terminal] Terminal already initialized, skipping prompt trigger');
           }
-          
+
           // Focus the terminal after everything is set up
           if (scriptTerminalInstance.current) {
             console.log('[Terminal] Focusing terminal');
@@ -662,7 +662,7 @@ export const useSessionView = (
       }
     }
   }, [viewMode, scriptTerminalRef, initTerminal, activeSession]);
-  
+
 
 
   useEffect(() => {
@@ -700,7 +700,7 @@ export const useSessionView = (
       lastProcessedScriptOutputLength.current = existingOutput.length;
     }
   }, [activeSessionId, scriptOutput]);
-  
+
   useEffect(() => {
     if (!scriptTerminalInstance.current || viewMode !== 'terminal' || !activeSession) return;
     const currentScriptOutput = useSessionStore.getState().scriptOutput[activeSession.id] || [];
@@ -716,11 +716,11 @@ export const useSessionView = (
     // Output view removed - skip terminal writing entirely
     if (!activeSession || !terminalInstance.current) return;
     console.log(`[Terminal Write Effect] Called, formatted output length: ${formattedOutput.length}, session: ${currentSessionIdForOutput}, lastProcessed: ${lastProcessedOutputLength.current}, viewMode: ${viewMode}`);
-    
+
     // Skip if not in output view mode
     // Output view removed - skip terminal writing
     return;
-    
+
     if (!terminalInstance.current) {
       console.log(`[Terminal Write Effect] No terminal instance yet`);
       // If we have formatted output but no terminal, retry after a delay
@@ -736,7 +736,7 @@ export const useSessionView = (
             // Only auto-scroll if user is already at the bottom
             const buffer = terminalInstance.current.buffer.active;
             const isAtBottom = buffer.viewportY >= buffer.length - terminalInstance.current.rows;
-            
+
             if (isAtBottom) {
               terminalInstance.current.scrollToBottom();
             }
@@ -745,12 +745,12 @@ export const useSessionView = (
       }
       return;
     }
-    
+
     if (!formattedOutput && formattedOutput !== '') {
       console.log(`[Terminal Write Effect] No formatted output`);
       return;
     }
-    
+
     const currentActiveSession = useSessionStore.getState().getActiveSession();
     if (!currentActiveSession || currentSessionIdForOutput !== currentActiveSession.id) {
       console.log(`[Terminal Write Effect] Session mismatch: ${currentSessionIdForOutput} !== ${currentActiveSession?.id}`);
@@ -774,12 +774,12 @@ export const useSessionView = (
       // This shouldn't happen, but log it if it does
       console.warn(`[Terminal Write Effect] Formatted output shrank from ${lastProcessedOutputLength.current} to ${formattedOutput.length}`);
     }
-    
+
     if (formattedOutput.length > 0) {
       // Only auto-scroll if user is already at the bottom
       const buffer = terminalInstance.current.buffer.active;
       const isAtBottom = buffer.viewportY >= buffer.length - terminalInstance.current.rows;
-      
+
       if (isAtBottom) {
         terminalInstance.current.scrollToBottom();
       }
@@ -789,7 +789,7 @@ export const useSessionView = (
   useEffect(() => {
     if (!scriptTerminalInstance.current || !activeSession) return;
     const fullScriptOutput = scriptOutput.join('');
-    
+
     // Handle case where output was cleared (e.g., user clicked clear button)
     if (fullScriptOutput.length === 0 && lastProcessedScriptOutputLength.current > 0) {
       // Only reset if the output was explicitly cleared to 0
@@ -807,7 +807,7 @@ export const useSessionView = (
       // Only auto-scroll if user is already at the bottom
       const buffer = scriptTerminalInstance.current.buffer.active;
       const isAtBottom = buffer.viewportY >= buffer.length - scriptTerminalInstance.current.rows;
-      
+
       if (isAtBottom) {
         scriptTerminalInstance.current.scrollToBottom();
       }
@@ -878,12 +878,12 @@ export const useSessionView = (
     const handleSelectAndViewDiff = async (event: CustomEvent) => {
       const { sessionId } = event.detail;
       console.log('[useSessionView] Select session and view diff:', sessionId);
-      
+
       // First, select the session if it's not already active
       if (sessionId && activeSession?.id !== sessionId) {
         await useSessionStore.getState().setActiveSession(sessionId);
       }
-      
+
       // Then switch to View Diff tab after a short delay to ensure session is loaded
       setTimeout(() => {
         setViewMode('changes');
@@ -921,7 +921,7 @@ export const useSessionView = (
     const timer = setTimeout(() => {
       console.log('[Terminal Theme Update] Theme changed to:', theme);
       console.log('[Terminal Theme Update] Root classes:', document.documentElement.className);
-      
+
       if (terminalInstance.current) {
         const newTheme = getTerminalTheme();
         console.log('[Terminal Theme Update] New terminal theme:', newTheme);
@@ -937,7 +937,7 @@ export const useSessionView = (
         scriptTerminalInstance.current.refresh(0, scriptTerminalInstance.current.rows - 1);
       }
     }, 50); // Small delay to ensure CSS updates have propagated
-    
+
     return () => clearTimeout(timer);
   }, [theme]);
 
@@ -974,7 +974,7 @@ export const useSessionView = (
     if (['running', 'initializing'].includes(activeSession.status)) {
       const sessionStartTime = activeSession.runStartedAt ? new Date(activeSession.runStartedAt).getTime() : Date.now();
       if (!startTime || startTime !== sessionStartTime) setStartTime(sessionStartTime);
-      
+
       setElapsedTime(Math.floor((Date.now() - sessionStartTime) / 1000));
       // Use visibility-aware interval that slows down when tab is not visible
       const cleanup = createVisibilityAwareInterval(
@@ -1025,7 +1025,7 @@ export const useSessionView = (
     if (!activeSession) return;
     const { status } = activeSession;
     const prevStatus = previousStatusRef.current;
-    
+
     if (prevStatus === 'initializing' && status === 'running') {
       // Only clear terminal for new sessions, not when continuing conversations
       const hasExistingOutput = activeSession.output && activeSession.output.length > 0;
@@ -1037,7 +1037,7 @@ export const useSessionView = (
         isContinuingConversationRef.current = false;
       }
     }
-    
+
     // Trigger reload when status changes indicate output might be available
     if (prevStatus && prevStatus !== status) {
       if (['stopped', 'waiting'].includes(prevStatus) && status === 'initializing') {
@@ -1046,10 +1046,10 @@ export const useSessionView = (
         setShouldReloadOutput(true);
       }
     }
-    
+
     previousStatusRef.current = status;
   }, [activeSession?.status, activeSessionId]);
-  
+
   const handleNavigateToPrompt = useCallback((marker: any) => {
     if (!terminalInstance.current) return;
     // Output view removed - always navigate directly
@@ -1078,7 +1078,7 @@ export const useSessionView = (
         if (foundLine >= 0) break;
       }
     }
-    
+
     if (foundLine < 0) {
         for (let i = 0; i < buffer.length; i++) {
             if(buffer.getLine(i)?.translateToString(true).includes(searchTextStart)) {
@@ -1094,7 +1094,7 @@ export const useSessionView = (
       terminalInstance.current.scrollToLine(output_line);
     }
   };
-  
+
   useEffect(() => {
     const handlePromptNavigation = (event: CustomEvent) => {
       const { sessionId, promptMarker } = event.detail;
@@ -1105,7 +1105,7 @@ export const useSessionView = (
     window.addEventListener('navigateToPrompt', handlePromptNavigation as EventListener);
     return () => window.removeEventListener('navigateToPrompt', handlePromptNavigation as EventListener);
   }, [activeSession?.id, handleNavigateToPrompt]);
-  
+
   // Add debug keyboard shortcut (Cmd/Ctrl + Shift + D)
   useEffect(() => {
     const handleDebugKeyboard = (e: KeyboardEvent) => {
@@ -1133,19 +1133,19 @@ export const useSessionView = (
       console.log('[useSessionView] handleSendInput early return', { inputTrimmed: !input.trim(), noActiveSession: !activeSession });
       return;
     }
-    
+
     let finalInput = ultrathink ? `${input}\nultrathink` : input;
-    
+
     // Check if we have compacted context to inject
     if (contextCompacted && compactedContext) {
       console.log('[Context Compaction] Injecting compacted context into prompt');
       finalInput = `<session_context>\n${compactedContext}\n</session_context>\n\n${finalInput}`;
-      
+
       // Clear the compacted context after using it
       setContextCompacted(false);
       setCompactedContext(null);
     }
-    
+
     // If there are attached images, save them and append paths to input
     if (attachedImages && attachedImages.length > 0) {
       try {
@@ -1158,7 +1158,7 @@ export const useSessionView = (
             type: img.type,
           }))
         );
-        
+
         // Append image paths to the prompt
         const imagePathsText = imagePaths.map(path => `Image: ${path}`).join('\n');
         finalInput = `${finalInput}\n\n${imagePathsText}`;
@@ -1167,7 +1167,7 @@ export const useSessionView = (
         // Continue without images on error
       }
     }
-    
+
     const response = await API.sessions.sendInput(activeSession.id, `${finalInput}\n`);
     if (response.success) {
       setInput('');
@@ -1177,22 +1177,22 @@ export const useSessionView = (
 
   const handleContinueConversation = async (attachedImages?: any[], model?: string) => {
     if (!input.trim() || !activeSession) return;
-    
+
     // Mark that we're continuing a conversation to prevent output reload
     isContinuingConversationRef.current = true;
-    
+
     let finalInput = ultrathink ? `${input}\nultrathink` : input;
-    
+
     // Check if we have compacted context to inject
     if (contextCompacted && compactedContext) {
       console.log('[Context Compaction] Injecting compacted context into continuation prompt');
       finalInput = `<session_context>\n${compactedContext}\n</session_context>\n\n${finalInput}`;
-      
+
       // Clear the compacted context after using it
       setContextCompacted(false);
       setCompactedContext(null);
     }
-    
+
     // If there are attached images, save them and append paths to input
     if (attachedImages && attachedImages.length > 0) {
       try {
@@ -1205,7 +1205,7 @@ export const useSessionView = (
             type: img.type,
           }))
         );
-        
+
         // Append image paths to the prompt
         const imagePathsText = imagePaths.map(path => `Image: ${path}`).join('\n');
         finalInput = `${finalInput}\n\n${imagePathsText}`;
@@ -1214,7 +1214,7 @@ export const useSessionView = (
         // Continue without images on error
       }
     }
-    
+
     const response = await API.sessions.continue(activeSession.id, finalInput, model);
     if (response.success) {
       setInput('');
@@ -1233,7 +1233,7 @@ export const useSessionView = (
   const handleStopSession = async () => {
     if (activeSession) await API.sessions.stop(activeSession.id);
   };
-  
+
   const handleGitPull = async () => {
     if (!activeSession) return;
     setIsMerging(true);
@@ -1289,7 +1289,7 @@ export const useSessionView = (
       console.error('Error toggling auto-commit:', error);
     }
   };
-  
+
   const handleRebaseMainIntoWorktree = async () => {
     if (!activeSession) return;
     console.log(`[handleRebaseMainIntoWorktree] Starting rebase for session ${activeSession.id}`);
@@ -1299,7 +1299,7 @@ export const useSessionView = (
       console.log(`[handleRebaseMainIntoWorktree] Calling API.sessions.rebaseMainIntoWorktree`);
       const response = await API.sessions.rebaseMainIntoWorktree(activeSession.id);
       console.log(`[handleRebaseMainIntoWorktree] API call completed`, response);
-      
+
       if (!response.success) {
         if ((response as any).gitError) {
           const gitError = (response as any).gitError;
@@ -1352,7 +1352,7 @@ export const useSessionView = (
       setIsLoadingOutput(false);
     }
   };
-  
+
   const generateDefaultCommitMessage = async () => {
     if (!activeSession) return '';
     try {
@@ -1376,7 +1376,7 @@ export const useSessionView = (
     setShouldSquash(true);
     setShowCommitMessageDialog(true);
   };
-  
+
   const performSquashWithCommitMessage = async (message: string) => {
     if (!activeSession) return;
     setIsMerging(true);
@@ -1420,9 +1420,9 @@ export const useSessionView = (
 
   const handleOpenIDE = async () => {
     if (!activeSession) return;
-    
+
     setIsOpeningIDE(true);
-    
+
     try {
       const response = await API.sessions.openIDE(activeSession.id);
       if (!response.success) {
@@ -1443,7 +1443,7 @@ export const useSessionView = (
       setIsOpeningIDE(false);
     }
   };
-  
+
   const handleStravuFileSelect = (file: any, content: string) => {
     const formattedContent = `\n\n## File: ${file.name}\n\`\`\`${file.type}\n${content}\n\`\`\`\n\n`;
     setInput(prev => prev + formattedContent);
@@ -1507,7 +1507,7 @@ export const useSessionView = (
     const tips: string[] = [];
     const output = details.output?.toLowerCase() || '';
     const message = details.message?.toLowerCase() || '';
-    
+
     if (output.includes('conflict') || message.includes('conflict')) {
       tips.push('• You have merge conflicts that need to be resolved manually');
       tips.push('• Use "git status" to see conflicted files');
@@ -1527,7 +1527,7 @@ export const useSessionView = (
   const handleClearTerminal = useCallback(() => {
     if (scriptTerminalInstance.current) {
       scriptTerminalInstance.current.clear();
-      
+
       // Also clear the stored script output for this session
       if (activeSession) {
         useSessionStore.getState().clearScriptOutput(activeSession.id);
@@ -1535,21 +1535,21 @@ export const useSessionView = (
       }
     }
   }, [activeSession]);
-  
+
   const handleCompactContext = async () => {
     if (!activeSession) return;
-    
+
     try {
       console.log('[Context Compaction] Starting compaction for session:', activeSession.id);
-      
+
       // Generate the compacted context
       const response = await API.sessions.generateCompactedContext(activeSession.id);
-      
+
       if (response.success && response.data) {
         const summary = response.data.summary;
         setCompactedContext(summary);
         setContextCompacted(true);
-        
+
         // Add the summary to the terminal output immediately
         if (terminalInstance.current) {
           terminalInstance.current.write('\r\n');
@@ -1558,22 +1558,22 @@ export const useSessionView = (
           terminalInstance.current.write('\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n\r\n');
           terminalInstance.current.write('\x1b[90mThe following context summary has been generated and will be\x1b[0m\r\n');
           terminalInstance.current.write('\x1b[90mautomatically included with your next prompt:\x1b[0m\r\n\r\n');
-          
+
           // Write the summary with proper formatting
           const lines = summary.split('\n');
           lines.forEach((line: string) => {
             terminalInstance.current?.write(line + '\r\n');
           });
-          
+
           terminalInstance.current.write('\r\n\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n');
           terminalInstance.current.write('\x1b[1;32m✓ Context compacted successfully!\x1b[0m\r\n');
           terminalInstance.current.write('\x1b[1;36mJust type your next message - the context above will be automatically included.\x1b[0m\r\n');
           terminalInstance.current.write('\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n\r\n');
-          
+
           // Scroll to bottom to show the summary
           terminalInstance.current.scrollToBottom();
         }
-        
+
         console.log('[Context Compaction] Context successfully compacted and displayed');
       } else {
         console.error('[Context Compaction] Failed to compact context:', response.error);
@@ -1588,7 +1588,7 @@ export const useSessionView = (
       }
     }
   };
-  
+
   return {
     theme,
     viewMode,
@@ -1657,5 +1657,7 @@ export const useSessionView = (
     contextCompacted,
     hasConversationHistory,
     compactedContext,
+    // Expose terminal instance for search functionality
+    scriptTerminalInstance,
   };
 };
